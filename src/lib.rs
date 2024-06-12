@@ -22,6 +22,7 @@ enum Op {
     Mul(RefValue, RefValue),
     Tanh(RefValue),
     Exp(RefValue),
+    Relu(RefValue),
     Pow(RefValue, f64),
 }
 
@@ -82,6 +83,17 @@ impl RefValue {
                         rhs * (val_unwrapped.value.powf(rhs - 1.0)) * self_unwrapped.grad;
                     self.clone()
                 }
+                Op::Relu(val) => {
+                    let mut val_unwrapped = (*val).borrow_mut();
+                    let value;
+                    if self_unwrapped.value > 0.0 {
+                        value = 1.0;
+                    } else {
+                        value = 0.0;
+                    }
+                    val_unwrapped.grad += value * self_unwrapped.grad;
+                    self.clone()
+                }
             }
         } else {
             self.clone()
@@ -108,40 +120,29 @@ impl RefValue {
             if let Some(prev_val) = prev {
                 match *prev_val {
                     Op::Add(val, val2) => {
-                        let val = val.backward_internal();
-                        let val2 = val2.backward_internal();
-                        {
-                            (*res).borrow_mut().prev = Some(Box::new(Op::Add(val, val2)));
-                        }
+                        val.backward_internal();
+                        val2.backward_internal();
                         res.clone()
                     }
                     Op::Mul(val, val2) => {
-                        let val = val.backward_internal();
-                        let val2 = val2.backward_internal();
-                        {
-                            (*res).borrow_mut().prev = Some(Box::new(Op::Mul(val, val2)));
-                        }
+                        val.backward_internal();
+                        val2.backward_internal();
                         res.clone()
                     }
                     Op::Tanh(val) => {
-                        let val = val.backward_internal();
-                        {
-                            (*res).borrow_mut().prev = Some(Box::new(Op::Tanh(val)));
-                        }
+                        val.backward_internal();
                         res.clone()
                     }
                     Op::Exp(val) => {
-                        let val = val.backward_internal();
-                        {
-                            (*res).borrow_mut().prev = Some(Box::new(Op::Exp(val)));
-                        }
+                        val.backward_internal();
                         res.clone()
                     }
-                    Op::Pow(val, rhs) => {
-                        let val = val.backward_internal();
-                        {
-                            (*res).borrow_mut().prev = Some(Box::new(Op::Pow(val, rhs)));
-                        }
+                    Op::Pow(val, _) => {
+                        val.backward_internal();
+                        res.clone()
+                    }
+                    Op::Relu(val) => {
+                        val.backward_internal();
                         res.clone()
                     }
                 }
@@ -200,6 +201,22 @@ impl RefValue {
             value,
             grad: 0.0,
             prev: Some(Box::new(Op::Pow(self, rhs))),
+        })))
+    }
+
+    pub fn relu(self) -> Self {
+        let mut value = 0.0;
+        {
+            let self_unwrapped = (*self).borrow();
+            if self_unwrapped.value >= 0.0 {
+                value = self_unwrapped.value;
+            }
+        }
+        RefValue(Rc::new(RefCell::new(Value {
+            id: COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            value,
+            grad: 0.0,
+            prev: Some(Box::new(Op::Relu(self))),
         })))
     }
 }

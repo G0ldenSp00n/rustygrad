@@ -11,3 +11,4 @@
 - Pow
 - Exp
 - Tanh
+- Relu
