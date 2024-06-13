@@ -6,15 +6,13 @@ pub mod mlp;
 static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 use std::{
-    borrow::{Borrow, BorrowMut},
-    cell::{Cell, RefCell},
+    cell::RefCell,
     collections::HashSet,
-    ops::{Add, Deref, DerefMut, Div, Mul, Neg, Sub},
+    iter::Sum,
+    ops::{Add, Deref, Div, Mul, Neg, Sub},
     rc::Rc,
     sync::atomic::AtomicUsize,
 };
-
-use ordered_float::{Float, NotNan};
 
 #[derive(Debug, Clone)]
 enum Op {
@@ -152,6 +150,10 @@ impl RefValue {
         } else {
             self.clone()
         }
+    }
+
+    pub fn item(&self) -> f64 {
+        (*self).borrow().value
     }
 
     pub fn backward(self) -> Self {
@@ -361,5 +363,11 @@ impl Deref for RefValue {
     type Target = RefCell<Value>;
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl Sum for RefValue {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(RefValue::new(0.0), |a, b| a + b)
     }
 }

@@ -1,4 +1,7 @@
-use rustygrad::{mlp::Neuron, RefValue};
+use rustygrad::{
+    mlp::{Layer, Neuron, MLP},
+    RefValue,
+};
 
 fn main() {
     let x1 = RefValue::new(2.0);
@@ -15,12 +18,12 @@ fn main() {
     let e = (2 * n).exp();
     let o = (e.clone() - 1) / (e + 1);
 
-    println!("{:#?}", (*o).borrow().value);
+    // println!("{:#?}", (*o).borrow().value);
 
     let l = o.backward();
-    println!("{l:#?}");
+    // println!("{l:#?}");
 
-    let neuron = Neuron::new(1);
-    let res = neuron();
-    println!("{}", res);
+    let mlp = MLP::new(2, &mut vec![4, 4, 1]);
+    let x = vec![RefValue::new(2.0), RefValue::new(3.0)];
+    println!("{:?}", mlp(x, ()));
 }
