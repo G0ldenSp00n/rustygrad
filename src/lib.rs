@@ -28,7 +28,7 @@ enum Op {
 pub struct Value {
     id: usize,
     pub value: f64,
-    grad: f64,
+    pub grad: f64,
     prev: Option<Box<Op>>,
 }
 
@@ -46,50 +46,48 @@ impl RefValue {
     }
 
     fn calc_grad(self) -> Self {
-        let self_unwrapped = (*self).borrow();
-        if let Some(prev_val) = self_unwrapped.prev.clone() {
+        let out = (*self).borrow();
+        if let Some(prev_val) = out.prev.clone() {
             match *prev_val {
-                Op::Add(val, val2) => {
-                    let mut val_unwrapped = (*val).borrow_mut();
-                    let mut val2_unwraped = (*val2).borrow_mut();
-                    val_unwrapped.grad = 1.0 * self_unwrapped.grad;
-                    val2_unwraped.grad = 1.0 * self_unwrapped.grad;
+                Op::Add(val_s, val_o) => {
+                    let mut val_self = (*val_s).borrow_mut();
+                    let mut val_other = (*val_o).borrow_mut();
+                    val_self.grad += 1.0 * out.grad;
+                    val_other.grad += 1.0 * out.grad;
                     self.clone()
                 }
-                Op::Mul(val, val2) => {
-                    let mut val_unwrapped = (*val).borrow_mut();
-                    let mut val2_unwraped = (*val2).borrow_mut();
+                Op::Mul(val_s, val_o) => {
+                    let mut val_self = (*val_s).borrow_mut();
+                    let mut val_other = (*val_o).borrow_mut();
 
-                    val_unwrapped.grad = val2_unwraped.value * self_unwrapped.grad;
-                    val2_unwraped.grad = val_unwrapped.value * self_unwrapped.grad;
+                    val_self.grad += val_other.value * out.grad;
+                    val_other.grad += val_self.value * out.grad;
                     self.clone()
                 }
-                Op::Tanh(val) => {
-                    let mut val_unwrapped = (*val).borrow_mut();
-                    val_unwrapped.grad +=
-                        (1.0 - (self_unwrapped.value.powi(2))) * self_unwrapped.grad;
+                Op::Tanh(val_s) => {
+                    let mut val_self = (*val_s).borrow_mut();
+                    val_self.grad += (1.0 - (out.value.powi(2))) * out.grad;
                     self.clone()
                 }
-                Op::Exp(val) => {
-                    let mut val_unwrapped = (*val).borrow_mut();
-                    val_unwrapped.grad += self_unwrapped.value * self_unwrapped.grad;
+                Op::Exp(val_s) => {
+                    let mut val_self = (*val_s).borrow_mut();
+                    val_self.grad += out.value * out.grad;
                     self.clone()
                 }
-                Op::Pow(val, rhs) => {
-                    let mut val_unwrapped = (*val).borrow_mut();
-                    val_unwrapped.grad +=
-                        rhs * (val_unwrapped.value.powf(rhs - 1.0)) * self_unwrapped.grad;
+                Op::Pow(val_s, other) => {
+                    let mut val_self = (*val_s).borrow_mut();
+                    val_self.grad += other * (val_self.value.powf(other - 1.0)) * out.grad;
                     self.clone()
                 }
-                Op::Relu(val) => {
-                    let mut val_unwrapped = (*val).borrow_mut();
+                Op::Relu(val_s) => {
+                    let mut val_self = (*val_s).borrow_mut();
                     let value;
-                    if self_unwrapped.value > 0.0 {
+                    if out.value > 0.0 {
                         value = 1.0;
                     } else {
                         value = 0.0;
                     }
-                    val_unwrapped.grad += value * self_unwrapped.grad;
+                    val_self.grad += value * out.grad;
                     self.clone()
                 }
             }
@@ -98,58 +96,45 @@ impl RefValue {
         }
     }
 
-    fn backward_internal(self) -> Self {
+    fn build_topo(self) -> Vec<RefValue> {
+        let mut topo = Vec::new();
+
         let mut visited: HashSet<usize> = HashSet::new();
-        let id;
-        {
-            let self_unwrapped = (*self).borrow_mut();
-            id = self_unwrapped.id;
-        }
-
-        if !visited.contains(&id) {
-            visited.insert(id);
-
-            let res = self.calc_grad();
-            let prev;
+        fn build_topo_internal(
+            visited: &mut HashSet<usize>,
+            topo: &mut Vec<RefValue>,
+            v: RefValue,
+        ) {
+            let id;
             {
-                let res_unwrapped = (*res).borrow();
-                prev = res_unwrapped.prev.clone();
+                let self_unwrapped = (*v).borrow_mut();
+                id = self_unwrapped.id;
             }
-            if let Some(prev_val) = prev {
-                match *prev_val {
-                    Op::Add(val, val2) => {
-                        val.backward_internal();
-                        val2.backward_internal();
-                        res.clone()
-                    }
-                    Op::Mul(val, val2) => {
-                        val.backward_internal();
-                        val2.backward_internal();
-                        res.clone()
-                    }
-                    Op::Tanh(val) => {
-                        val.backward_internal();
-                        res.clone()
-                    }
-                    Op::Exp(val) => {
-                        val.backward_internal();
-                        res.clone()
-                    }
-                    Op::Pow(val, _) => {
-                        val.backward_internal();
-                        res.clone()
-                    }
-                    Op::Relu(val) => {
-                        val.backward_internal();
-                        res.clone()
+
+            if !visited.contains(&id) {
+                visited.insert(id);
+                let prev;
+                {
+                    let res_unwrapped = (*v).borrow();
+                    prev = res_unwrapped.prev.clone();
+                }
+
+                if let Some(prev_val) = prev {
+                    match *prev_val {
+                        Op::Add(val, val2) | Op::Mul(val, val2) => {
+                            build_topo_internal(visited, topo, val);
+                            build_topo_internal(visited, topo, val2);
+                        }
+                        Op::Tanh(val) | Op::Exp(val) | Op::Relu(val) | Op::Pow(val, _) => {
+                            build_topo_internal(visited, topo, val);
+                        }
                     }
                 }
-            } else {
-                res.clone()
+                topo.push(v);
             }
-        } else {
-            self.clone()
         }
+        build_topo_internal(&mut visited, &mut topo, self);
+        topo
     }
 
     pub fn item(&self) -> f64 {
@@ -161,7 +146,11 @@ impl RefValue {
             let mut self_unwrapped = (*self).borrow_mut();
             self_unwrapped.grad = 1.0;
         }
-        self.backward_internal()
+        let topo = self.clone().build_topo();
+        topo.iter().rev().for_each(|val| {
+            (*val).clone().calc_grad();
+        });
+        self
     }
 
     pub fn tanh(self) -> Self {

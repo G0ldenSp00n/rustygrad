@@ -1,3 +1,5 @@
+use std::borrow::{Borrow, BorrowMut};
+
 use rustygrad::{
     mlp::{Layer, Neuron, MLP},
     RefValue,
@@ -15,6 +17,7 @@ fn main() {
     let x2w2 = x2 * w2;
     let x1w1x2w2 = x1w1 + x2w2;
     let n = x1w1x2w2 + b;
+    // let o = n.tanh();
     let e = (2 * n).exp();
     let o = (e.clone() - 1) / (e + 1);
 
@@ -23,7 +26,82 @@ fn main() {
     let l = o.backward();
     // println!("{l:#?}");
 
-    let mlp = MLP::new(2, &mut vec![4, 4, 1]);
-    let x = vec![RefValue::new(2.0), RefValue::new(3.0)];
-    println!("{:?}", mlp(x, ()));
+    let example_dataset = vec![
+        vec![RefValue::new(2.0), RefValue::new(3.0), RefValue::new(-1.0)],
+        vec![RefValue::new(3.0), RefValue::new(-1.0), RefValue::new(0.5)],
+        vec![RefValue::new(0.5), RefValue::new(1.0), RefValue::new(1.0)],
+        vec![RefValue::new(1.0), RefValue::new(1.0), RefValue::new(-1.0)],
+    ];
+
+    let expect_res = vec![
+        RefValue::new(1.0),
+        RefValue::new(-1.0),
+        RefValue::new(-1.0),
+        RefValue::new(1.0),
+    ];
+
+    let mlp = MLP::new(3, &mut vec![4, 4, 1]);
+    println!("--------------- [ TRY ] ---------------");
+    example_dataset.iter().for_each(|example| {
+        let res = mlp.call(example.clone());
+        println!("Res - {}", res.get(0).unwrap().item());
+    });
+
+    println!("--------------- [ TRAIN ] ---------------");
+    for _ in 0..100 {
+        //Forward Pass
+        let mut ypred = vec![];
+        example_dataset.iter().for_each(|example| {
+            let res = mlp.call(example.clone());
+            ypred.push(res.get(0).unwrap().clone());
+        });
+        //println!("{:?}", ypred.clone());
+
+        let loss: RefValue = expect_res
+            .iter()
+            .zip(ypred.iter())
+            .map(|(ygt, yout)| (yout.clone() - ygt.clone()).powf(2.0))
+            .sum();
+        println!("Loss - {}", loss.item());
+
+        // Backward Pass
+        mlp.parameters().iter().for_each(|param| {
+            (**param).borrow_mut().grad = 0.0;
+        });
+        loss.backward();
+
+        // let zero = mlp
+        //     .layers
+        //     .get(0)
+        //     .unwrap()
+        //     .neurons
+        //     .get(0)
+        //     .unwrap()
+        //     .w
+        //     .get(0)
+        //     .unwrap();
+        //
+        // {
+        //     println!(
+        //         "zero grad {:?} val {:?}",
+        //         (**zero).borrow().grad,
+        //         (**zero).borrow().value
+        //     );
+        // }
+
+        // Update
+        mlp.parameters().iter().for_each(|param| {
+            let grad;
+            {
+                grad = (**param).borrow().grad;
+            }
+            (**param).borrow_mut().value += -0.01 * grad;
+        });
+    }
+
+    println!("--------------- [ RES ] ---------------");
+    example_dataset.iter().for_each(|example| {
+        let res = mlp.call(example.clone());
+        println!("Res - {}", res.get(0).unwrap().item());
+    });
 }
