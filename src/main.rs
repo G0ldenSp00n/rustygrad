@@ -4,6 +4,7 @@ use rustygrad::{
     mlp::{Layer, Neuron, MLP},
     RefValue,
 };
+use tqdm::tqdm;
 
 fn main() {
     let x1 = RefValue::new(2.0);
@@ -48,7 +49,7 @@ fn main() {
     });
 
     println!("--------------- [ TRAIN ] ---------------");
-    for _ in 0..100 {
+    for _ in tqdm(0..1500) {
         //Forward Pass
         let mut ypred = vec![];
         example_dataset.iter().for_each(|example| {
@@ -62,32 +63,12 @@ fn main() {
             .zip(ypred.iter())
             .map(|(ygt, yout)| (yout.clone() - ygt.clone()).powf(2.0))
             .sum();
-        println!("Loss - {}", loss.item());
 
         // Backward Pass
         mlp.parameters().iter().for_each(|param| {
             (**param).borrow_mut().grad = 0.0;
         });
         loss.backward();
-
-        // let zero = mlp
-        //     .layers
-        //     .get(0)
-        //     .unwrap()
-        //     .neurons
-        //     .get(0)
-        //     .unwrap()
-        //     .w
-        //     .get(0)
-        //     .unwrap();
-        //
-        // {
-        //     println!(
-        //         "zero grad {:?} val {:?}",
-        //         (**zero).borrow().grad,
-        //         (**zero).borrow().value
-        //     );
-        // }
 
         // Update
         mlp.parameters().iter().for_each(|param| {
